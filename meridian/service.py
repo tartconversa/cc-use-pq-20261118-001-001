@@ -12,6 +12,7 @@ from .provenance import ProvenanceExplorer
 from .releases import ReleaseShelf
 from .sources import SourceRegistry
 from .storage import Store
+from .story_links import StoryIdentities
 
 
 class MeridianService:
@@ -20,17 +21,20 @@ class MeridianService:
         self.sources = SourceRegistry(self.store)
         self.observations = ObservationLedger(self.store, self.sources)
         self.coding = CodingDesk(self.store, self.observations, self.sources)
+        self.story_links = StoryIdentities(self.store, self.observations, self.sources)
         self.frames = CollectionFrames(self.store, self.sources, self.observations)
-        self.analytics = EvidenceAnalytics(self.store, self.observations, self.sources, self.coding)
+        self.analytics = EvidenceAnalytics(self.store, self.observations, self.sources,
+                                            self.coding, self.story_links)
         self.audit = IntegrityAudit(self.store)
         self.comparisons = ComparisonEngine(self.analytics)
         self.diagnostics = ReviewDiagnostics(self.store, self.observations, self.sources,
                                               self.coding, self.analytics, self.frames)
         self.releases = ReleaseShelf(self.store, self.analytics, self.frames, self.audit)
         self.provenance = ProvenanceExplorer(self.store, self.observations, self.coding,
-                                              self.analytics, self.releases)
+                                              self.analytics, self.releases, self.story_links)
         self.exports = EvidenceExporter(self.store, self.observations, self.sources,
-                                         self.coding, self.analytics, self.releases)
+                                         self.coding, self.analytics, self.releases,
+                                         self.story_links)
         self.batches = BatchImporter(self.store, self.observations)
 
     def close(self):
@@ -40,5 +44,6 @@ class MeridianService:
         return {"event_head": self.store.head(),
                 "sources": len(self.sources.list()),
                 "observations": len(self.observations.current()),
+                "story_links": len(self.story_links.list(state="active")),
                 "releases": len(self.store.all("SELECT release_id FROM releases"))}
 

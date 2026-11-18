@@ -93,6 +93,38 @@ def adjudication(payload):
     return data
 
 
+def story_link(payload):
+    fields = {"link_id", "region", "members", "determined_by", "reason"}
+    require(isinstance(payload, dict) and set(payload) == fields, "invalid_story_link",
+            "story link fields mismatch")
+    require(isinstance(payload["members"], list) and 2 <= len(payload["members"]) <= 32,
+            "invalid_story_link", "story link needs two to 32 members")
+    members = []
+    seen = set()
+    for item in payload["members"]:
+        require(isinstance(item, dict) and set(item) == {"origin", "external_id"},
+                "invalid_story_link", "story link members need origin and external_id only")
+        pair = (text(item["origin"], "origin"), text(item["external_id"], "external_id"))
+        require(pair not in seen, "invalid_story_link", "story link contains a duplicate member")
+        seen.add(pair)
+        members.append({"origin": pair[0], "external_id": pair[1]})
+    return {
+        "link_id": text(payload["link_id"], "link_id"),
+        "region": text(payload["region"], "region"),
+        "members": sorted(members, key=lambda item: (item["origin"], item["external_id"])),
+        "determined_by": text(payload["determined_by"], "determined_by"),
+        "reason": text(payload["reason"], "reason", 800),
+    }
+
+
+def story_link_revocation(payload):
+    fields = {"revoked_by", "reason"}
+    require(isinstance(payload, dict) and set(payload) == fields, "invalid_story_link",
+            "story link revocation fields mismatch")
+    return {"revoked_by": text(payload["revoked_by"], "revoked_by"),
+            "reason": text(payload["reason"], "reason", 800)}
+
+
 def report_query(payload):
     fields = {"start", "end", "regions", "topics", "audiences"}
     require(isinstance(payload, dict) and set(payload) == fields, "invalid_query", "query fields mismatch")

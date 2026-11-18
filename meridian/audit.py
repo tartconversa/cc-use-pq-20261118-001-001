@@ -42,8 +42,14 @@ class IntegrityAudit:
                 issues.append({"kind": "release_metadata", "release_id": row["release_id"]})
             if report["story_count"] != len(report["stories"]):
                 issues.append({"kind": "release_count", "release_id": row["release_id"]})
+            if report.get("source_key_story_count", len(report.get("baseline_stories", []))) \
+                    != len(report.get("baseline_stories", [])):
+                issues.append({"kind": "release_source_key_count", "release_id": row["release_id"]})
             if sum(item["observation_count"] for item in report["stories"]) != report["eligible_observations"]:
                 issues.append({"kind": "eligible_reconciliation", "release_id": row["release_id"]})
+            if report.get("story_identity_issues"):
+                issues.append({"kind": "release_identity_conflict", "release_id": row["release_id"]})
+        issues.extend(self._story_link_issues())
         for row in self.store.all("SELECT * FROM collection_frames"):
             members = self.store.all("SELECT origin,external_id,revision FROM frame_members WHERE frame_id=?",
                                      (row["frame_id"],))
@@ -51,6 +57,41 @@ class IntegrityAudit:
                 issues.append({"kind": "frame_members", "frame_id": row["frame_id"]})
         return {"ok": not issues, "issues": issues, "event_head": self.store.head(),
                 "observation_revisions": len(observations), "logical_observations": len(grouped)}
+
+    def _story_link_issues(self):
+        issues = []
+        for row in self.store.all("SELECT * FROM story_links ORDER BY link_id"):
+            members = self.store.all(
+                "SELECT m.* FROM story_link_members m WHERE m.link_id=? ORDER BY m.origin,m.external_id",
+                (row["link_id"],))
+            active = [member for member in members if member["active"]]
+            if row["state"] == "active":
+                if len(members) < 2:
+                    issues.append({"kind": "story_link_members", "link_id": row["link_id"]})
+                if {member["source_id"] for member in members} and \
+                        len({member["source_id"] for member in members}) < 2:
+                    issues.append({"kind": "story_link_sources", "link_id": row["link_id"]})
+                if len(active) != len(members):
+                    issues.append({"kind": "story_link_membership_state", "link_id": row["link_id"]})
+                for member in active:
+                    other = self.store.one(
+                        "SELECT m.link_id FROM story_link_members m JOIN story_links l "
+                        "ON l.link_id=m.link_id WHERE m.origin=? AND m.external_id=? "
+                        "AND m.active=1 AND l.state='active' AND m.link_id<>?",
+                        (member["origin"], member["external_id"], row["link_id"]))
+                    if other is not None:
+                        issues.append({"kind": "story_link_overlap", "link_id": row["link_id"],
+                                       "other_link_id": other["link_id"]})
+                created = self.store.one("SELECT event_no FROM events WHERE event_no=?",
+                                         (row["created_event_no"],))
+                if created is None:
+                    issues.append({"kind": "story_link_event", "link_id": row["link_id"]})
+            else:
+                if any(member["active"] for member in members):
+                    issues.append({"kind": "revoked_link_membership", "link_id": row["link_id"]})
+                if row["revoked_event_no"] is None:
+                    issues.append({"kind": "revoked_link_metadata", "link_id": row["link_id"]})
+        return issues
 
     def events(self, after=0, limit=100):
         from .errors import require

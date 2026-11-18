@@ -56,7 +56,13 @@ class CollectionFrames:
         data = {"frame_id": frame_id, "source_id": row["source_id"], "start": row["start_at"],
                 "end": row["end_at"], "expected_count": row["expected_count"],
                 "state": row["state"], "actual_count": row["actual_count"],
-                "frozen_hash": row["frozen_hash"]}
+                "frozen_hash": row["frozen_hash"],
+                # 采集封闭始终以来源的原始稿件为单位；故事认定只改变报告分母，
+                # 不会把任何原始稿件从采集覆盖中扣除。
+                "coverage_basis": "source_original_observation",
+                "member_count": (self.store.one(
+                    "SELECT COUNT(*) AS count FROM frame_members WHERE frame_id=?",
+                    (frame_id,))["count"])}
         candidates = self._candidates(data)
         data["current_count"] = len(candidates)
         data["current_hash"] = digest(candidates)

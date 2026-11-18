@@ -20,7 +20,9 @@ class ReleaseShelf:
             gate["passed"] = False
             gate["reasons"].append("collection_coverage")
         token = digest({"report": report, "gate": gate, "coverage": coverage})
-        return {"token": token, "report": report, "quality": gate, "coverage": coverage}
+        return {"token": token, "report": report, "quality": gate, "coverage": coverage,
+                "story_identity_issues": report["story_identity_issues"],
+                "determination": report["determination"]}
 
     def publish(self, release_id, query, token, *, minimum_stories=1, maximum_exclusion_share=0.4):
         with self.store.transaction():
@@ -70,6 +72,11 @@ class ReleaseShelf:
                 "same_result": previous["stories"] == current["stories"] and
                                previous["excluded"] == current["excluded"],
                 "story_count_delta": current["story_count"] - previous["story_count"],
+                "source_key_story_count_delta": (current["source_key_story_count"]
+                                                 - previous.get("source_key_story_count",
+                                                                previous["story_count"])),
+                "frozen_determination": previous.get("determination"),
+                "current_determination": current["determination"],
                 "excluded_delta": {key: current["excluded"].get(key, 0) - previous["excluded"].get(key, 0)
                                    for key in sorted(set(current["excluded"]) | set(previous["excluded"]))}}
 

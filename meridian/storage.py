@@ -64,6 +64,22 @@ CREATE TABLE IF NOT EXISTS releases (
 CREATE TABLE IF NOT EXISTS report_queries (
   query_hash TEXT PRIMARY KEY, spec_json TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS story_links (
+  link_id TEXT PRIMARY KEY, region TEXT NOT NULL, determined_by TEXT NOT NULL,
+  reason TEXT NOT NULL, state TEXT NOT NULL, version INTEGER NOT NULL,
+  created_at TEXT NOT NULL, created_event_no INTEGER NOT NULL,
+  revoked_by TEXT, revoke_reason TEXT, revoked_at TEXT, revoked_event_no INTEGER
+);
+CREATE TABLE IF NOT EXISTS story_link_members (
+  link_id TEXT NOT NULL REFERENCES story_links(link_id),
+  origin TEXT NOT NULL, external_id TEXT NOT NULL,
+  source_id TEXT NOT NULL, original_story_key TEXT NOT NULL,
+  head_revision INTEGER NOT NULL, active INTEGER NOT NULL,
+  PRIMARY KEY(link_id, origin, external_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS story_link_members_active
+  ON story_link_members(origin, external_id) WHERE active=1;
+CREATE INDEX IF NOT EXISTS story_links_state ON story_links(state, region);
 CREATE TABLE IF NOT EXISTS collection_frames (
   frame_id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(source_id),
   start_at TEXT NOT NULL, end_at TEXT NOT NULL, expected_count INTEGER NOT NULL,

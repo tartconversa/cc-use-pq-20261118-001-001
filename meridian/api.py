@@ -97,6 +97,24 @@ class RegionComparisonInput(BaseModel):
     right_region: str
 
 
+class StoryLinkMemberInput(BaseModel):
+    origin: str
+    external_id: str
+
+
+class StoryLinkInput(BaseModel):
+    link_id: str
+    region: str
+    members: list[StoryLinkMemberInput]
+    determined_by: str
+    reason: str
+
+
+class StoryLinkRevocationInput(BaseModel):
+    revoked_by: str
+    reason: str
+
+
 def create_app(path="meridian.sqlite3"):
     app = FastAPI(title="Meridian evidence analytics", version="1.0")
     service = MeridianService(path)
@@ -166,6 +184,36 @@ def create_app(path="meridian.sqlite3"):
     def adjudicate(payload: AdjudicationInput):
         return service.coding.adjudicate(payload.model_dump())
 
+    @app.post("/story-links")
+    def determine_story_link(payload: StoryLinkInput):
+        return service.story_links.determine(
+            {**payload.model_dump(), "members": [item.model_dump() for item in payload.members]})
+
+    @app.get("/story-links")
+    def list_story_links(state: str | None = None):
+        return service.story_links.list(state=state)
+
+    @app.get("/story-links/revoked")
+    def revoked_story_links(region: str | None = None):
+        query = {"start": "0001-01-01T00:00:00+00:00", "end": "9999-01-01T00:00:00+00:00",
+                 "regions": [region] if region else [], "topics": [], "audiences": []}
+        return service.provenance.revoked_links(query)
+
+    @app.get("/story-links/{link_id}")
+    def story_link(link_id: str):
+        result = service.story_links.describe(link_id)
+        result["events"] = service.story_links.events(link_id)
+        return result
+
+    @app.post("/story-links/{link_id}/revoke")
+    def revoke_story_link(link_id: str, payload: StoryLinkRevocationInput):
+        return service.story_links.revoke(link_id, payload.model_dump())
+
+    @app.get("/observations/{origin}/{external_id}/story-links")
+    def observation_story_links(origin: str, external_id: str):
+        return {"origin": origin, "external_id": external_id,
+                "links": service.story_links.history_for(origin, external_id)}
+
     @app.post("/frames")
     def open_frame(payload: FrameInput):
         return service.frames.open(**payload.model_dump())
@@ -208,6 +256,17 @@ def create_app(path="meridian.sqlite3"):
     @app.post("/reports/story-conflicts")
     def story_conflicts(payload: ReportInput):
         return service.diagnostics.story_conflicts(payload.model_dump())
+
+    @app.post("/reports/identity-conflicts")
+    def identity_conflicts(payload: ReportInput):
+        return service.diagnostics.identity_conflicts(payload.model_dump())
+
+
+
+    @app.post("/reports/story")
+    def story_detail(payload: ReportInput, region: str, story_key: str, link_id: str | None = None):
+        return service.provenance.story_detail(payload.model_dump(), region, story_key,
+                                               link_id=link_id)
 
     @app.post("/reports/topic-matrix")
     def topic_matrix(payload: ReportInput):

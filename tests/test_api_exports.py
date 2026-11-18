@@ -77,6 +77,43 @@ class ApiTests(unittest.TestCase):
         response = self.client.post("/sources", json={"source_id": "only-id"})
         self.assertEqual(response.status_code, 422)
 
+    def test_http_story_link_lifecycle(self):
+        self.client.post("/sources", json=source("a", "North", "Outlet A"))
+        self.client.post("/sources", json=source("b", "North", "Outlet B"))
+        self.client.post("/observations", json=observation("x", "a", "alpha"))
+        self.client.post("/observations", json=observation("y", "b", "beta"))
+        for external_id in ("x", "y"):
+            for reviewer in ("alice", "bob"):
+                self.client.post("/decisions", json=decision(external_id, reviewer, "positive"))
+        payload = {"link_id": "shared", "region": "North",
+                   "members": [{"origin": "local-fixture", "external_id": "x"},
+                               {"origin": "local-fixture", "external_id": "y"}],
+                   "determined_by": "dana", "reason": "same event"}
+        created = self.client.post("/story-links", json=payload)
+        self.assertEqual(created.status_code, 200)
+        self.assertEqual(created.json()["state"], "active")
+        listed = self.client.get("/story-links").json()
+        self.assertEqual([item["link_id"] for item in listed], ["shared"])
+        report = self.client.post("/reports", json=query()).json()
+        self.assertEqual(report["story_count"], 1)
+        self.assertEqual(report["source_key_story_count"], 2)
+        detail = self.client.post("/reports/story", params={"region": "North",
+                                                            "story_key": "shared"},
+                                  json=query()).json()
+        self.assertEqual(len(detail["observations"]), 2)
+        history = self.client.get("/observations/local-fixture/x/story-links").json()
+        self.assertEqual(history["links"][0]["link_id"], "shared")
+        revoked = self.client.post("/story-links/shared/revoke",
+                                   json={"revoked_by": "dana", "reason": "not the same event"})
+        self.assertEqual(revoked.status_code, 200)
+        self.assertEqual(revoked.json()["state"], "revoked")
+        report = self.client.post("/reports", json=query()).json()
+        self.assertEqual(report["story_count"], 2)
+        revoked_list = self.client.get("/story-links/revoked").json()
+        self.assertEqual(revoked_list["count"], 1)
+        conflicts = self.client.post("/reports/identity-conflicts", json=query()).json()
+        self.assertEqual(conflicts["count"], 0)
+
 
 class ExportTests(ServiceCase):
     def test_current_bundle_reconciles_evidence(self):
